@@ -1,7 +1,8 @@
 const urlModel = require("../models/urlModel");
-const nanoId = require("nano-id");
 const validUrl = require("valid-url");
 const baseUrl = "http://localhost:3000"; 
+const { customAlphabet } = require('nanoid')
+
 
 
 const redis = require("redis");     //// STARTING REDIS CODE FROM HERE
@@ -31,9 +32,9 @@ const SET_ASYNC = promisify(redisClient.SET).bind(redisClient);
 const GET_ASYNC = promisify(redisClient.GET).bind(redisClient);   /////// ENDING REDIS CODE HERE.
 
 ///////////////////// creating urls ///////////////
-
 const createUrl = async function (req, res) {
   try {
+
     let long_url = req.body.longUrl;
 
     const bodyData = req.body
@@ -44,32 +45,55 @@ const createUrl = async function (req, res) {
 
     if (Object.values(long_url).length == 0) {return res.status(400).send({status: false,message: "Please provide URL value in request body."});}
 
-    if (!validUrl.isUri(long_url)) {return res.status(400).send({ status: false, message: "Please enter valid long URL." });}
+    if (!validUrl.isWebUri(long_url)) {return res.status(400).send({ status: false, message: "Please enter valid long URL." });}
 
-    const urlData = await urlModel.findOne({ longUrl: long_url })
+   //-get
+  //   const getDataFromCache = await GET_ASYNC(`${long_url}`);
+  // let url = JSON.parse(getDataFromCache)          
+  // if (url) {
+  //   // console.log(getDataFromCache)
+  //   return res.status(302).send({ status: true, message: "redis return", data: url});   
+  // } 
+
+  const urlData = await urlModel.findOne({ longUrl: long_url })           
 
     if (urlData) {
       const { longUrl, shortUrl, urlCode } = urlData;
       return res.status(200).send({status: true,data: { longUrl: longUrl, shortUrl: shortUrl, urlCode: urlCode },});
     } else {
-      let url_code = nanoId(8);
+      
+      const nanoid = customAlphabet('qwertyuiopasdfghjklzxcvbnm', 12)
+      let urlCode = nanoid()
+     
+      
+      let shortUrl = baseUrl + "/" + urlCode;
 
-      const short_url = baseUrl + "/" + url_code;
+      bodyData.urlCode = urlCode 
 
-      const {longUrl, shortUrl, urlCode} = await urlModel.create({longUrl: long_url,shortUrl: short_url,urlCode: url_code,});
+      bodyData.shortUrl = shortUrl
 
-      res.status(201).send({ status: true, data: {longUrl:longUrl, shortUrl:shortUrl, urlCode:urlCode} });
+      let repeat = await urlModel.find({urlCode: bodyData.urlCode})
+     // console.log(repeat)
+      if(!repeat) return res.status(409).send({status: false, msg:"This URL code already exist." })
+      // console.log(bodyData)
+
+      await urlModel.create(bodyData) 
+      let responseData  = await urlModel.findOne({urlCode:urlCode}).select({_id:0, __v:0, createdAt:0, updatedAt: 0});
+      // console.log(responseData)
+      await SET_ASYNC(`${bodyData.longUrl}`, JSON.stringify(responseData)) 
+      return res.status(201).send({status: true, message: "URL created successfully",data:responseData});
     }
   } catch (error) {
     res.status(500).send({ status: false, message: error.message });
   }
 };
 
+
 /////////////////// [ getting urls ] /////////////////
 
 const getUrl = async function (req, res) {
   const getDataFromCache = await GET_ASYNC(`${req.params.urlCode}`);
-  let url = JSON.parse(getDataFromCache)          //// ------->>> have doubt about this line...!!!
+  let url = JSON.parse(getDataFromCache)         
   if (url) {
     // console.log(JSON.parse(getDataFromCache))
     return res.status(302).redirect(url.longUrl);
@@ -78,13 +102,10 @@ const getUrl = async function (req, res) {
   else {
     const urlData = await urlModel.findOne({ urlCode: req.params.urlCode });
     if (!urlData) {
-      return res
-        .status(404)
-        .send({
+      return res.status(404).send({
           status: false,
-          message:
-            "No URL is found with the given code. Please enter valid URL code",
-        });}
+          message:"No URL is found with the given code. Please enter valid URL code"});
+          }
     await SET_ASYNC(`${req.params.urlCode}`, JSON.stringify(urlData))
     res.status(302).redirect(urlData.longUrl);
     // console.log(urlData.longUrl)
