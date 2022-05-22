@@ -1,12 +1,12 @@
 const urlModel = require("../models/urlModel");
 const validUrl = require("valid-url");
 const baseUrl = "http://localhost:3000"; 
-const { customAlphabet } = require('nanoid')
+const { customAlphabet } = require('nanoid')    
 
 
 
 const redis = require("redis");     //// STARTING REDIS CODE FROM HERE
-const { promisify } = require("util");  /// don't know from where it is coming..??
+const { promisify } = require("util"); 
 
 const redisClient = redis.createClient(
   10204,
